@@ -10,6 +10,7 @@
             --circle-color: #2a2a2a;
             --handle-color: #ff4757;
             --text-color: #ffffff;
+            --btn-color: #2ed573;
         }
 
         body {
@@ -18,12 +19,32 @@
             height: 100vh;
             display: flex;
             flex-direction: column;
-            justify-content: center;
+            justify-content: space-between;
             align-items: center;
             background-color: var(--bg-color);
             font-family: -apple-system, BlinkMacSystemFont, sans-serif;
             overflow: hidden;
             touch-action: none; 
+            padding: 40px 0;
+            box-sizing: border-box;
+        }
+
+        #connect-btn {
+            background-color: var(--btn-color);
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            font-size: 1rem;
+            font-weight: bold;
+            border-radius: 25px;
+            cursor: pointer;
+            box-shadow: 0 4px 10px rgba(46, 213, 115, 0.3);
+            z-index: 20;
+        }
+
+        #connect-btn.connected {
+            background-color: #ff4757;
+            box-shadow: 0 4px 10px rgba(255, 71, 87, 0.3);
         }
 
         #joystick-container {
@@ -50,8 +71,6 @@
         }
 
         #output-panel {
-            position: absolute;
-            bottom: 10%;
             display: flex;
             gap: 40px;
             color: var(--text-color);
@@ -73,6 +92,8 @@
 </head>
 <body>
 
+    <button id="connect-btn">Connect to Car</button>
+
     <div id="joystick-container">
         <div id="joystick-handle"></div>
     </div>
@@ -93,8 +114,16 @@
         const handle = document.getElementById('joystick-handle');
         const leftDisplay = document.getElementById('left-val');
         const rightDisplay = document.getElementById('right-val');
+        const connectBtn = document.getElementById('connect-btn');
 
         let rect, centerX, centerY, maxRadius;
+        
+        // BLE Variables
+        const NORDIC_UART_SERVICE = '6e400001-b5a3-f393-e0a9-e50e24dcca9e';
+        const RX_CHARACTERISTIC = '6e400002-b5a3-f393-e0a9-e50e24dcca9e'; // For writing to the peripheral
+        let bleDevice = null;
+        let rxChar = null;
+        let lastSentTime = 0;
 
         function updateDimensions() {
             rect = container.getBoundingClientRect();
@@ -105,6 +134,59 @@
 
         window.addEventListener('resize', updateDimensions);
         updateDimensions();
+
+        // Web Bluetooth Connection Logic
+        connectBtn.addEventListener('click', async () => {
+            if (bleDevice && bleDevice.gatt.connected) {
+                await bleDevice.gatt.disconnect();
+                return;
+            }
+
+            try {
+                connectBtn.textContent = "Scanning...";
+                bleDevice = await navigator.bluetooth.requestDevice({
+                    filters: [{ services: [NORDIC_UART_SERVICE] }]
+                });
+
+                bleDevice.addEventListener('gattserverdisconnected', onDisconnected);
+
+                const server = await bleDevice.gatt.connect();
+                const service = await server.getPrimaryService(NORDIC_UART_SERVICE);
+                rxChar = await service.getCharacteristic(RX_CHARACTERISTIC);
+
+                connectBtn.textContent = "Disconnect";
+                connectBtn.classList.add('connected');
+                alert("Connected successfully to host!");
+            } catch (error) {
+                console.error(error);
+                connectBtn.textContent = "Connect to Car";
+                alert("Connection failed: " + error.message);
+            }
+        });
+
+        function onDisconnected() {
+            connectBtn.textContent = "Connect to Car";
+            connectBtn.classList.remove('connected');
+            rxChar = null;
+            alert("Bluetooth Disconnected.");
+        }
+
+        // Transmit values over BLE (Throttled to max once per 50ms)
+        async function sendDataBluetooth(left, right) {
+            if (!rxChar) return; 
+
+            const now = performance.now();
+            if (now - lastSentTime < 50 && left !== 0 && right !== 0) return;
+            lastSentTime = now;
+
+            try {
+                // Pack values into signed 8-bit integers (-128 to 127 space handles our -100 to 100 perfectly)
+                const buffer = new Int8Array([left, right]);
+                await rxChar.writeValueWithoutResponse(buffer);
+            } catch (error) {
+                console.error("Transmission error:", error);
+            }
+        }
 
         function getWheelSpeeds(x, y) {
             let left = y + x;
@@ -141,11 +223,13 @@
 
             const speeds = getWheelSpeeds(mappedX, mappedY);
             updateDisplay(speeds.left, speeds.right);
+            sendDataBluetooth(speeds.left, speeds.right);
         }
 
         function resetJoystick() {
             handle.style.transform = `translate(0px, 0px)`;
             updateDisplay(0, 0);
+            sendDataBluetooth(0, 0); // Send stop command instantly
         }
 
         function updateDisplay(l, r) {
