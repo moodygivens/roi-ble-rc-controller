@@ -11,6 +11,7 @@
             --handle-color: #ff4757;
             --text-color: #ffffff;
             --btn-color: #2ed573;
+            --reload-color: #57606f;
         }
 
         body {
@@ -25,7 +26,7 @@
             font-family: -apple-system, BlinkMacSystemFont, sans-serif;
             overflow: hidden;
             touch-action: none; 
-            padding: 40px 0;
+            padding: 30px 0;
             box-sizing: border-box;
         }
 
@@ -49,8 +50,8 @@
 
         #joystick-container {
             position: relative;
-            width: 80vw;
-            height: 80vw;
+            width: 75vw;
+            height: 75vw;
             background-color: var(--circle-color);
             border-radius: 50%;
             display: flex;
@@ -88,6 +89,20 @@
             text-transform: uppercase;
             opacity: 0.7;
         }
+
+        #reload-btn {
+            background-color: var(--reload-color);
+            color: #ced6e0;
+            border: none;
+            padding: 6px 14px;
+            font-size: 0.75rem;
+            border-radius: 4px;
+            cursor: pointer;
+            opacity: 0.6;
+        }
+        #reload-btn:active {
+            opacity: 1;
+        }
     </style>
 </head>
 <body>
@@ -109,21 +124,29 @@
         </div>
     </div>
 
+    <button id="reload-btn">Force Clear Cache & Reload</button>
+
     <script>
         const container = document.getElementById('joystick-container');
         const handle = document.getElementById('joystick-handle');
         const leftDisplay = document.getElementById('left-val');
         const rightDisplay = document.getElementById('right-val');
         const connectBtn = document.getElementById('connect-btn');
+        const reloadBtn = document.getElementById('reload-btn');
 
         let rect, centerX, centerY, maxRadius;
         
-        // BLE Variables
         const NORDIC_UART_SERVICE = '6e400001-b5a3-f393-e0a9-e50e24dcca9e';
-        const RX_CHARACTERISTIC = '6e400002-b5a3-f393-e0a9-e50e24dcca9e'; // For writing to the peripheral
+        const RX_CHARACTERISTIC = '6e400002-b5a3-f393-e0a9-e50e24dcca9e'; 
         let bleDevice = null;
         let rxChar = null;
         let lastSentTime = 0;
+
+        // Force reload event listener
+        reloadBtn.addEventListener('click', () => {
+            // Appending a random query string guarantees the browser treats it as a fresh asset fetch
+            window.location.href = window.location.pathname + '?reload=' + Date.now();
+        });
 
         function updateDimensions() {
             rect = container.getBoundingClientRect();
@@ -135,7 +158,6 @@
         window.addEventListener('resize', updateDimensions);
         updateDimensions();
 
-        // Web Bluetooth Connection Logic
         connectBtn.addEventListener('click', async () => {
             if (bleDevice && bleDevice.gatt.connected) {
                 await bleDevice.gatt.disconnect();
@@ -171,7 +193,6 @@
             alert("Bluetooth Disconnected.");
         }
 
-        // Transmit values over BLE (Throttled to max once per 50ms)
         async function sendDataBluetooth(left, right) {
             if (!rxChar) return; 
 
@@ -180,7 +201,6 @@
             lastSentTime = now;
 
             try {
-                // Pack values into signed 8-bit integers (-128 to 127 space handles our -100 to 100 perfectly)
                 const buffer = new Int8Array([left, right]);
                 await rxChar.writeValueWithoutResponse(buffer);
             } catch (error) {
@@ -203,13 +223,11 @@
 
         function handleInput(e) {
             e.preventDefault();
-            
             const touch = e.touches ? e.touches[0] : e;
             let x = touch.clientX - centerX;
             let y = centerY - touch.clientY; 
 
             const distance = Math.sqrt(x * x + y * y);
-            
             if (distance > maxRadius) {
                 const scale = maxRadius / distance;
                 x *= scale;
@@ -217,7 +235,6 @@
             }
 
             handle.style.transform = `translate(${x}px, ${-y}px)`;
-
             const mappedX = (x / maxRadius) * 100;
             const mappedY = (y / maxRadius) * 100;
 
@@ -229,7 +246,7 @@
         function resetJoystick() {
             handle.style.transform = `translate(0px, 0px)`;
             updateDisplay(0, 0);
-            sendDataBluetooth(0, 0); // Send stop command instantly
+            sendDataBluetooth(0, 0);
         }
 
         function updateDisplay(l, r) {
