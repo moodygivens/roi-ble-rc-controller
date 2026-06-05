@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Two-Wheel Car Controller</title>
+    <style>
+        :root {
+            --bg-color: #121212;
+            --circle-color: #2a2a2a;
+            --handle-color: #ff4757;
+            --text-color: #ffffff;
+        }
+
+        body {
+            margin: 0;
+            padding: 0;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            background-color: var(--bg-color);
+            font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+            overflow: hidden;
+            touch-action: none; 
+        }
+
+        #joystick-container {
+            position: relative;
+            width: 80vw;
+            height: 80vw;
+            background-color: var(--circle-color);
+            border-radius: 50%;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            box-shadow: inset 0 0 20px rgba(0,0,0,0.5);
+        }
+
+        #joystick-handle {
+            position: absolute;
+            width: 15vw;
+            height: 15vw;
+            background-color: var(--handle-color);
+            border-radius: 50%;
+            cursor: pointer;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.3);
+            z-index: 10;
+        }
+
+        #output-panel {
+            position: absolute;
+            bottom: 10%;
+            display: flex;
+            gap: 40px;
+            color: var(--text-color);
+            text-align: center;
+        }
+
+        .motor-val {
+            font-size: 2rem;
+            font-weight: bold;
+            display: block;
+        }
+
+        .label {
+            font-size: 0.8rem;
+            text-transform: uppercase;
+            opacity: 0.7;
+        }
+    </style>
+</head>
+<body>
+
+    <div id="joystick-container">
+        <div id="joystick-handle"></div>
+    </div>
+
+    <div id="output-panel">
+        <div>
+            <span class="label">Left Wheel</span>
+            <span id="left-val" class="motor-val">0</span>
+        </div>
+        <div>
+            <span class="label">Right Wheel</span>
+            <span id="right-val" class="motor-val">0</span>
+        </div>
+    </div>
+
+    <script>
+        const container = document.getElementById('joystick-container');
+        const handle = document.getElementById('joystick-handle');
+        const leftDisplay = document.getElementById('left-val');
+        const rightDisplay = document.getElementById('right-val');
+
+        let rect, centerX, centerY, maxRadius;
+
+        function updateDimensions() {
+            rect = container.getBoundingClientRect();
+            centerX = rect.left + rect.width / 2;
+            centerY = rect.top + rect.height / 2;
+            maxRadius = rect.width / 2;
+        }
+
+        window.addEventListener('resize', updateDimensions);
+        updateDimensions();
+
+        function getWheelSpeeds(x, y) {
+            let left = y + x;
+            let right = y - x;
+            const maxVal = Math.max(Math.abs(left), Math.abs(right));
+            
+            if (maxVal > 100) {
+                const scale = 100 / maxVal;
+                left *= scale;
+                right *= scale;
+            }
+            return { left: Math.round(left), right: Math.round(right) };
+        }
+
+        function handleInput(e) {
+            e.preventDefault();
+            
+            const touch = e.touches ? e.touches[0] : e;
+            let x = touch.clientX - centerX;
+            let y = centerY - touch.clientY; 
+
+            const distance = Math.sqrt(x * x + y * y);
+            
+            if (distance > maxRadius) {
+                const scale = maxRadius / distance;
+                x *= scale;
+                y *= scale;
+            }
+
+            handle.style.transform = `translate(${x}px, ${-y}px)`;
+
+            const mappedX = (x / maxRadius) * 100;
+            const mappedY = (y / maxRadius) * 100;
+
+            const speeds = getWheelSpeeds(mappedX, mappedY);
+            updateDisplay(speeds.left, speeds.right);
+        }
+
+        function resetJoystick() {
+            handle.style.transform = `translate(0px, 0px)`;
+            updateDisplay(0, 0);
+        }
+
+        function updateDisplay(l, r) {
+            leftDisplay.textContent = l;
+            rightDisplay.textContent = r;
+        }
+
+        container.addEventListener('touchstart', handleInput);
+        container.addEventListener('touchmove', handleInput);
+        container.addEventListener('touchend', resetJoystick);
+
+        container.addEventListener('mousedown', (e) => {
+            handleInput(e);
+            window.addEventListener('mousemove', handleInput);
+            window.addEventListener('mouseup', () => {
+                window.removeEventListener('mousemove', handleInput);
+                resetJoystick();
+            }, { once: true });
+        });
+    </script>
+</body>
+</html>
