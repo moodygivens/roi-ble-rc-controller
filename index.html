@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
     <title>Two-Wheel Car Controller</title>
     <style>
         :root {
@@ -13,7 +13,6 @@
             --btn-color: #2ed573;
             --reload-color: #57606f;
         }
-
         body {
             margin: 0;
             padding: 0;
@@ -25,11 +24,10 @@
             background-color: var(--bg-color);
             font-family: -apple-system, BlinkMacSystemFont, sans-serif;
             overflow: hidden;
-            touch-action: none; 
-            padding: 30px 0;
+            touch-action: none;
+            padding: 20px 0 calc(20px + env(safe-area-inset-bottom)); /* Protects from mobile navigation bars */
             box-sizing: border-box;
         }
-
         #connect-btn {
             background-color: var(--btn-color);
             color: white;
@@ -41,17 +39,18 @@
             cursor: pointer;
             box-shadow: 0 4px 10px rgba(46, 213, 115, 0.3);
             z-index: 20;
+            margin-top: 10px;
         }
-
         #connect-btn.connected {
             background-color: #ff4757;
             box-shadow: 0 4px 10px rgba(255, 71, 87, 0.3);
         }
-
         #joystick-container {
             position: relative;
-            width: 75vw;
-            height: 75vw;
+            width: 70vw;
+            height: 70vw;
+            max-width: 320px;
+            max-height: 320px;
             background-color: var(--circle-color);
             border-radius: 50%;
             display: flex;
@@ -59,49 +58,62 @@
             align-items: center;
             box-shadow: inset 0 0 20px rgba(0,0,0,0.5);
         }
-
         #joystick-handle {
             position: absolute;
             width: 15vw;
             height: 15vw;
+            max-width: 65px;
+            max-height: 65px;
             background-color: var(--handle-color);
             border-radius: 50%;
             cursor: pointer;
             box-shadow: 0 4px 10px rgba(0,0,0,0.3);
             z-index: 10;
         }
-
         #output-panel {
             display: flex;
             gap: 40px;
             color: var(--text-color);
             text-align: center;
         }
-
         .motor-val {
             font-size: 2rem;
             font-weight: bold;
             display: block;
         }
-
         .label {
             font-size: 0.8rem;
             text-transform: uppercase;
             opacity: 0.7;
         }
-
+        #reload-container {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 6px;
+            width: 100%;
+            z-index: 30;
+            margin-bottom: 5px;
+        }
         #reload-btn {
             background-color: var(--reload-color);
             color: #ced6e0;
             border: none;
-            padding: 6px 14px;
-            font-size: 0.75rem;
-            border-radius: 4px;
+            padding: 8px 18px;
+            font-size: 0.8rem;
+            font-weight: 500;
+            border-radius: 6px;
             cursor: pointer;
-            opacity: 0.6;
+            opacity: 0.8;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.2);
         }
         #reload-btn:active {
             opacity: 1;
+        }
+        #version-tag {
+            color: #57606f;
+            font-size: 0.75rem;
+            font-weight: bold;
         }
     </style>
 </head>
@@ -124,7 +136,10 @@
         </div>
     </div>
 
-    <button id="reload-btn">Force Clear Cache & Reload</button>
+    <div id="reload-container">
+        <button id="reload-btn">Force Clear Cache & Reload</button>
+        <div id="version-tag">Build: v1.2</div>
+    </div>
 
     <script>
         const container = document.getElementById('joystick-container');
@@ -135,16 +150,16 @@
         const reloadBtn = document.getElementById('reload-btn');
 
         let rect, centerX, centerY, maxRadius;
-        
+
         const NORDIC_UART_SERVICE = '6e400001-b5a3-f393-e0a9-e50e24dcca9e';
-        const RX_CHARACTERISTIC = '6e400002-b5a3-f393-e0a9-e50e24dcca9e'; 
+        const RX_CHARACTERISTIC = '6e400002-b5a3-f393-e0a9-e50e24dcca9e';
+
         let bleDevice = null;
         let rxChar = null;
         let lastSentTime = 0;
 
         // Force reload event listener
         reloadBtn.addEventListener('click', () => {
-            // Appending a random query string guarantees the browser treats it as a fresh asset fetch
             window.location.href = window.location.pathname + '?reload=' + Date.now();
         });
 
@@ -166,8 +181,14 @@
 
             try {
                 connectBtn.textContent = "Scanning...";
+                
                 bleDevice = await navigator.bluetooth.requestDevice({
-                    filters: [{ services: [NORDIC_UART_SERVICE] }]
+                    filters: [{ services: [NORDIC_UART_SERVICE] }],
+                    optionalServices: [
+                        NORDIC_UART_SERVICE,
+                        '0000180f-0000-1000-8000-00805f9b34fb',
+                        '0000180a-0000-1000-8000-00805f9b34fb'
+                    ]
                 });
 
                 bleDevice.addEventListener('gattserverdisconnected', onDisconnected);
@@ -194,7 +215,7 @@
         }
 
         async function sendDataBluetooth(left, right) {
-            if (!rxChar) return; 
+            if (!rxChar) return;
 
             const now = performance.now();
             if (now - lastSentTime < 50 && left !== 0 && right !== 0) return;
@@ -212,7 +233,7 @@
             let left = y + x;
             let right = y - x;
             const maxVal = Math.max(Math.abs(left), Math.abs(right));
-            
+
             if (maxVal > 100) {
                 const scale = 100 / maxVal;
                 left *= scale;
@@ -225,7 +246,7 @@
             e.preventDefault();
             const touch = e.touches ? e.touches[0] : e;
             let x = touch.clientX - centerX;
-            let y = centerY - touch.clientY; 
+            let y = centerY - touch.clientY;
 
             const distance = Math.sqrt(x * x + y * y);
             if (distance > maxRadius) {
